@@ -1,11 +1,16 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from datetime import datetime, timezone
 
 MIN_SCORE_DEFAULT = 0.01
 STOP_PCT = 0.03   # 3% sotto
 TP_PCT   = 0.06   # 6% sopra
 
+# File opzionale con ulteriori ticker (uno per riga)
+CUSTOM_TICKERS_FILE = "tickers_custom.txt"
+
+# Universe base
 TICKERS_INDICI = ["^GSPC", "^NDX", "^DJI", "^RUT"]
 TICKERS_MATERIE = ["GC=F", "SI=F", "CL=F", "NG=F", "HG=F"]
 TICKERS_USA = [
@@ -18,7 +23,46 @@ TICKERS_ETF = [
     "XLE", "XLF", "XLK", "XLV", "ARKK"
 ]
 
+# Nomi leggibili
+TICKER_NAME = {
+    "^GSPC": "S&P 500",
+    "^NDX": "Nasdaq 100",
+    "^DJI": "Dow Jones",
+    "^RUT": "Russell 2000",
+    "GC=F": "Oro",
+    "SI=F": "Argento",
+    "CL=F": "Petrolio WTI",
+    "NG=F": "Gas Naturale",
+    "HG=F": "Rame",
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet (Google)",
+    "AMZN": "Amazon",
+    "META": "Meta Platforms",
+    "NVDA": "NVIDIA",
+    "TSLA": "Tesla",
+    "BRK-B": "Berkshire Hathaway B",
+    "JPM": "JPMorgan Chase",
+    "JNJ": "Johnson & Johnson",
+    "XOM": "Exxon Mobil",
+    "UNH": "UnitedHealth",
+    "V": "Visa",
+    "PG": "Procter & Gamble",
+    "SPY": "SPDR S&P 500 ETF",
+    "QQQ": "Invesco QQQ Trust",
+    "IWM": "iShares Russell 2000",
+    "DIA": "SPDR Dow Jones ETF",
+    "GLD": "SPDR Gold Shares",
+    "SLV": "iShares Silver Trust",
+    "XLE": "Energy Select Sector",
+    "XLF": "Financial Select Sector",
+    "XLK": "Technology Select Sector",
+    "XLV": "Health Care Select Sector",
+    "ARKK": "ARK Innovation ETF",
+}
+
 def build_universe():
+    """Universe base: indici, materie prime, big cap, ETF."""
     ticker_categoria = {}
     for t in TICKERS_INDICI:
         ticker_categoria[t] = "Indice"
@@ -29,6 +73,25 @@ def build_universe():
     for t in TICKERS_ETF:
         ticker_categoria[t] = "ETF"
     return ticker_categoria
+
+def load_custom_tickers():
+    """
+    Carica eventuali ticker extra da CUSTOM_TICKERS_FILE.
+    Uno per riga. Li consideriamo come 'Titolo USA' di default.
+    """
+    extra = {}
+    try:
+        with open(CUSTOM_TICKERS_FILE, "r") as f:
+            for line in f:
+                t = line.strip().upper()
+                if not t or t.startswith("#"):
+                    continue
+                extra[t] = "Titolo USA"
+    except FileNotFoundError:
+        pass
+    return extra
+
+# ----------------- Analisi indici (regime mercato) -----------------
 
 def _download_single(ticker, period="6mo", interval="1d", min_bars=60):
     data = yf.download(
@@ -83,7 +146,7 @@ def analyze_market_regime():
         info[idx] = res
 
     if not info:
-        return {"phase": "Dati indici non disponibili", "details": {}}
+        return {"phase": "Dati indici non disponibili", "details": {}, "highlights": []}
 
     keys = [k for k in ["^GSPC", "^NDX"] if k in info]
     bull_count = 0
@@ -111,14 +174,26 @@ def analyze_market_regime():
         phase = "Mercato debole / in correzione"
 
     details = {}
+    highlights = []
     for name, d in info.items():
+        d20 = d["ret20"]
+        d60 = d["ret60"]
+        d20p = round(d20 * 100, 3) if d20 is not None else None
+        d60p = round(d60 * 100, 3) if d60 is not None else None
         details[name] = {
             "price": round(d["price"], 3),
-            "return_20d_pct": round(d["ret20"] * 100, 3) if d["ret20"] is not None else None,
-            "return_60d_pct": round(d["ret60"] * 100, 3) if d["ret60"] is not None else None,
+            "return_20d_pct": d20p,
+            "return_60d_pct": d60p,
         }
+        if d60p is not None:
+            if d60p > 10:
+                highlights.append(f"{name} in forte rialzo negli ultimi 60 giorni (+{d60p:.1f}%).")
+            elif d60p < -5:
+                highlights.append(f"{name} in calo negli ultimi 60 giorni ({d60p:.1f}%).")
 
-    return {"phase": phase, "details": details}
+    return {"phase": phase, "details": details, "highlights": highlights}
+
+# ----------------- Etichette & rating -----------------
 
 def label_trend(trend_pct):
     if trend_pct > 5:
@@ -145,14 +220,51 @@ def label_momentum(ret60_pct):
 def label_signal(score):
     if score > 0.5:
         return "Molto positivo"
-    elif score > 0.15:
+    elif score > 0.35:
         return "Positivo"
-    elif score > 0:
+    elif score > 0.15:
         return "Leggermente positivo"
-    elif score > -0.15:
-        return "Neutro / leggermente negativo"
+    elif score > 0:
+        return "Quasi neutro"
     else:
         return "Negativo"
+
+def rating_from_score(score):
+    """Consiglio 1–5 basato sullo score tecnico."""
+    if score > 0.6:
+        return 5
+    elif score > 0.35:
+        return 4
+    elif score > 0.15:
+        return 3
+    elif score > 0.05:
+        return 2
+    else:
+        return 1
+
+# hunter_score: evidenzia "cavalli pazzi" (momentum forte, volumi, spazio verso i massimi)
+def hunter_score_from_features(ret20, ret60, volume_ratio, distance_high_pct):
+    """
+    ret20/ret60 sono in forma decimale (0.10 = +10%)
+    distance_high_pct è negativa se sotto i massimi 1y.
+    """
+    m20 = max(ret20, 0.0)
+    m60 = max(ret60, 0.0)
+    vol_boost = max(volume_ratio - 1.0, 0.0)
+    # più è negativa la distanza dal massimo 1y, più "spazio" ha
+    space = 0.0
+    if distance_high_pct is not None and distance_high_pct < 0:
+        # es: -50% -> 0.5, -20% -> 0.2 (limitiamo a 1.0)
+        space = min(abs(distance_high_pct) / 100.0, 1.0)
+
+    return (
+        0.5 * m20 +
+        0.3 * m60 +
+        0.1 * vol_boost +
+        0.1 * space
+    )
+
+# ----------------- Scansione mercato -----------------
 
 def scan_market(
     min_score=MIN_SCORE_DEFAULT,
@@ -161,7 +273,13 @@ def scan_market(
     interval="1d",
     min_bars=60
 ):
+    # Universe base + eventuali extra da file
     ticker_categoria = build_universe()
+    extra = load_custom_tickers()
+    for t, cat in extra.items():
+        if t not in ticker_categoria:
+            ticker_categoria[t] = cat
+
     tickers = list(ticker_categoria.keys())
     results = []
 
@@ -193,6 +311,7 @@ def scan_market(
         data["Return_20d"] = data[price_col].pct_change(20)
         data["Return_60d"] = data[price_col].pct_change(60)
         data["SMA_20"] = data[price_col].rolling(window=20).mean()
+        data["Daily_ret"] = data[price_col].pct_change()
 
         if "Volume" in data.columns and not data["Volume"].isna().all():
             data["Vol_20d_avg"] = data["Volume"].rolling(window=20).mean()
@@ -219,6 +338,15 @@ def scan_market(
             if not pd.isna(vol_20) and vol_20 != 0:
                 volume_ratio = float(last["Volume"] / vol_20)
 
+        # volatilità annualizzata (20 giorni)
+        vol20 = data["Daily_ret"].rolling(20).std().iloc[-1]
+        vol20_pct = float(vol20 * np.sqrt(252) * 100) if not pd.isna(vol20) else None
+
+        # distanza dal massimo 1y
+        high_1y = data[price_col].max()
+        distance_1y_high_pct = float(price_now / high_1y * 100 - 100.0) if high_1y > 0 else None
+
+        # score classico
         score = (
             0.4 * ret60 +
             0.3 * ret20 +
@@ -240,13 +368,20 @@ def scan_market(
         trend_lbl = label_trend(trend_pct)
         mom_lbl = label_momentum(ret60_pct)
         signal_lbl = label_signal(score)
+        rating = rating_from_score(score)
+
+        # hunter score
+        hs = hunter_score_from_features(ret20, ret60, volume_ratio, distance_1y_high_pct)
 
         entry = price_now
         sl = entry * (1.0 - STOP_PCT)
         tp = entry * (1.0 + TP_PCT)
 
+        name = TICKER_NAME.get(ticker, ticker)
+
         results.append({
             "ticker": ticker,
+            "name": name,
             "categoria": cat,
             "price": round(price_now, 3),
             "return_20d_pct": round(ret20_pct, 3),
@@ -257,6 +392,10 @@ def scan_market(
             "trend_label": trend_lbl,
             "momentum_label": mom_lbl,
             "signal_label": signal_lbl,
+            "rating_1_5": rating,
+            "volatility_20d_pct": round(vol20_pct, 3) if vol20_pct is not None else None,
+            "distance_1y_high_pct": round(distance_1y_high_pct, 3) if distance_1y_high_pct is not None else None,
+            "hunter_score": round(hs, 3),
             "entry_price": round(entry, 3),
             "stop_loss": round(sl, 3),
             "take_profit": round(tp, 3),
@@ -264,4 +403,14 @@ def scan_market(
 
     results = sorted(results, key=lambda x: x["score"], reverse=True)
     market = analyze_market_regime()
-    return {"market": market, "assets": results}
+    run_time_utc = datetime.now(timezone.utc).isoformat()
+
+    # ordiniamo anche per hunter_score per comodità lato frontend
+    top_hunters = sorted(results, key=lambda x: x["hunter_score"], reverse=True)
+
+    return {
+        "run_time_utc": run_time_utc,
+        "market": market,
+        "assets": results,
+        "hunters": top_hunters[:50]  # lista ridotta per tabella "hunter tesori"
+    }
