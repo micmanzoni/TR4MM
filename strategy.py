@@ -7,7 +7,6 @@ MIN_SCORE_DEFAULT = 0.01
 STOP_PCT = 0.03   # 3% sotto
 TP_PCT   = 0.06   # 6% sopra
 
-# File opzionale con ulteriori ticker (uno per riga)
 CUSTOM_TICKERS_FILE = "tickers_custom.txt"
 
 # Universe base
@@ -62,7 +61,6 @@ TICKER_NAME = {
 }
 
 def build_universe():
-    """Universe base: indici, materie prime, big cap, ETF."""
     ticker_categoria = {}
     for t in TICKERS_INDICI:
         ticker_categoria[t] = "Indice"
@@ -75,10 +73,6 @@ def build_universe():
     return ticker_categoria
 
 def load_custom_tickers():
-    """
-    Carica eventuali ticker extra da CUSTOM_TICKERS_FILE.
-    Uno per riga. Li consideriamo come 'Titolo USA' di default.
-    """
     extra = {}
     try:
         with open(CUSTOM_TICKERS_FILE, "r") as f:
@@ -91,7 +85,7 @@ def load_custom_tickers():
         pass
     return extra
 
-# ----------------- Analisi indici (regime mercato) -----------------
+# ---------- Analisi indici ----------
 
 def _download_single(ticker, period="6mo", interval="1d", min_bars=60):
     data = yf.download(
@@ -193,7 +187,7 @@ def analyze_market_regime():
 
     return {"phase": phase, "details": details, "highlights": highlights}
 
-# ----------------- Etichette & rating -----------------
+# ---------- Etichette & rating ----------
 
 def label_trend(trend_pct):
     if trend_pct > 5:
@@ -230,7 +224,6 @@ def label_signal(score):
         return "Negativo"
 
 def rating_from_score(score):
-    """Consiglio 1–5 basato sullo score tecnico."""
     if score > 0.6:
         return 5
     elif score > 0.35:
@@ -242,21 +235,13 @@ def rating_from_score(score):
     else:
         return 1
 
-# hunter_score: evidenzia "cavalli pazzi" (momentum forte, volumi, spazio verso i massimi)
 def hunter_score_from_features(ret20, ret60, volume_ratio, distance_high_pct):
-    """
-    ret20/ret60 sono in forma decimale (0.10 = +10%)
-    distance_high_pct è negativa se sotto i massimi 1y.
-    """
     m20 = max(ret20, 0.0)
     m60 = max(ret60, 0.0)
     vol_boost = max(volume_ratio - 1.0, 0.0)
-    # più è negativa la distanza dal massimo 1y, più "spazio" ha
     space = 0.0
     if distance_high_pct is not None and distance_high_pct < 0:
-        # es: -50% -> 0.5, -20% -> 0.2 (limitiamo a 1.0)
         space = min(abs(distance_high_pct) / 100.0, 1.0)
-
     return (
         0.5 * m20 +
         0.3 * m60 +
@@ -264,7 +249,7 @@ def hunter_score_from_features(ret20, ret60, volume_ratio, distance_high_pct):
         0.1 * space
     )
 
-# ----------------- Scansione mercato -----------------
+# ---------- Scansione mercato ----------
 
 def scan_market(
     min_score=MIN_SCORE_DEFAULT,
@@ -273,7 +258,6 @@ def scan_market(
     interval="1d",
     min_bars=60
 ):
-    # Universe base + eventuali extra da file
     ticker_categoria = build_universe()
     extra = load_custom_tickers()
     for t, cat in extra.items():
@@ -338,15 +322,12 @@ def scan_market(
             if not pd.isna(vol_20) and vol_20 != 0:
                 volume_ratio = float(last["Volume"] / vol_20)
 
-        # volatilità annualizzata (20 giorni)
         vol20 = data["Daily_ret"].rolling(20).std().iloc[-1]
         vol20_pct = float(vol20 * np.sqrt(252) * 100) if not pd.isna(vol20) else None
 
-        # distanza dal massimo 1y
         high_1y = data[price_col].max()
         distance_1y_high_pct = float(price_now / high_1y * 100 - 100.0) if high_1y > 0 else None
 
-        # score classico
         score = (
             0.4 * ret60 +
             0.3 * ret20 +
@@ -369,8 +350,6 @@ def scan_market(
         mom_lbl = label_momentum(ret60_pct)
         signal_lbl = label_signal(score)
         rating = rating_from_score(score)
-
-        # hunter score
         hs = hunter_score_from_features(ret20, ret60, volume_ratio, distance_1y_high_pct)
 
         entry = price_now
@@ -404,13 +383,12 @@ def scan_market(
     results = sorted(results, key=lambda x: x["score"], reverse=True)
     market = analyze_market_regime()
     run_time_utc = datetime.now(timezone.utc).isoformat()
-
-    # ordiniamo anche per hunter_score per comodità lato frontend
     top_hunters = sorted(results, key=lambda x: x["hunter_score"], reverse=True)
 
     return {
         "run_time_utc": run_time_utc,
         "market": market,
         "assets": results,
-        "hunters": top_hunters[:50]  # lista ridotta per tabella "hunter tesori"
+        "hunters": top_hunters[:50]
     }
+
