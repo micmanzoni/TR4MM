@@ -2,83 +2,245 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8" />
-  <title>Trading Scanner</title>
+  <title>MICHIMAN Trading Scanner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, sans-serif; padding: 10px; }
-    .market-box { padding: 10px; border: 1px solid #ccc; margin-bottom: 10px; border-radius: 4px; }
-    table { border-collapse: collapse; width: 100%; font-size: 13px; }
-    th, td { border: 1px solid #ddd; padding: 4px; text-align: center; }
-    th { background: #f5f5f5; position: sticky; top: 0; }
-    .positivo { background: #e3f7e3; }
-    .neutro { background: #fdf7e3; }
-    .negativo { background: #fbe5e5; }
-    button { padding: 6px 10px; margin-bottom: 10px; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 10px;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .logo-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo-box img {
+      height: 40px;
+      width: auto;
+    }
+    h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+    button {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      background: #22c55e;
+      color: #0f172a;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #16a34a;
+    }
+    .market-box {
+      padding: 10px;
+      border-radius: 8px;
+      background: #020617;
+      border: 1px solid #1e293b;
+      margin-bottom: 10px;
+    }
+    .market-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .highlights {
+      margin-top: 6px;
+      padding-left: 18px;
+    }
+    .meta-bar {
+      font-size: 12px;
+      margin-bottom: 8px;
+      color: #9ca3af;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 12px;
+      background: #020617;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid #1e293b;
+      padding: 4px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    th {
+      background: #020617;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .positivo { background: #022c22; }
+    .neutro { background: #1f2937; }
+    .negativo { background: #3f1d2b; }
+    .section-title {
+      margin-top: 16px;
+      margin-bottom: 4px;
+      font-size: 14px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
-  <h3>Trading Scanner</h3>
-  <button onclick="loadData()">Aggiorna</button>
+  <div class="topbar">
+    <div class="logo-box">
+      <img src="logo.png" alt="Michiman Hedge Fund Investment" />
+      <div>
+        <h3>MICHIMAN Trading Scanner</h3>
+        <div style="font-size:11px;color:#9ca3af;">Hedge Fund Investment – Analisi tecnica automatizzata</div>
+      </div>
+    </div>
+    <button onclick="loadData()">Aggiorna</button>
+  </div>
+
+  <div class="meta-bar">
+    <span id="last-run">Ultima analisi: -</span> |
+    <span id="count-info"></span>
+  </div>
+
   <div id="market" class="market-box"></div>
-  <div id="info"></div>
-  <table id="tabella">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Ticker</th>
-        <th>Categoria</th>
-        <th>Prezzo</th>
-        <th>Score</th>
-        <th>Segnale</th>
-        <th>Trend</th>
-        <th>Momentum</th>
-        <th>Entry</th>
-        <th>SL</th>
-        <th>TP</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <div id="info" style="margin-bottom:6px;"></div>
+
+  <div class="section-title">Classifica generale (score tecnico)</div>
+  <div style="overflow-x:auto;">
+    <table id="tabella-main">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Ticker</th>
+          <th>Nome</th>
+          <th>Categoria</th>
+          <th>Consiglio (1–5)</th>
+          <th>Score</th>
+          <th>Segnale</th>
+          <th>Trend</th>
+          <th>Momentum</th>
+          <th>Prezzo</th>
+          <th>Entry</th>
+          <th>SL</th>
+          <th>TP</th>
+          <th>Vol. 20g %</th>
+          <th>Dist. max 1y %</th>
+          <th>Hunter score</th>
+          <th>Analisi (UTC)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Top Hunter – Candidati “tesoro”</div>
+  <div style="font-size:11px;color:#9ca3af;margin-bottom:4px;">
+    Selezione basata su momentum, volumi, volatilità e distanza dai massimi a 1 anno.
+  </div>
+  <div style="overflow-x:auto;">
+    <table id="tabella-hunter">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Ticker</th>
+          <th>Nome</th>
+          <th>Categoria</th>
+          <th>Hunter score</th>
+          <th>Consiglio (1–5)</th>
+          <th>Score</th>
+          <th>Prezzo</th>
+          <th>Entry</th>
+          <th>SL</th>
+          <th>TP</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
-    // 👇 SOSTITUISCI QUI sotto con l'URL reale del tuo backend Render
-    const API_URL = "https://tr4mm-2.onrender.com/scan?min_score=0.01";
+    // 👉 METTI QUI L'URL DEL TUO BACKEND (quello che funziona con /scan)
+    const API_URL = "https://tr4mm-1.onrender.com/scan?min_score=0.01";
 
     function clsFromSignal(signal) {
       if (!signal) return "";
       if (signal.startsWith("Molto") || signal === "Positivo") return "positivo";
-      if (signal.startsWith("Neutro")) return "neutro";
+      if (signal.startsWith("Neutro") || signal.startsWith("Quasi")) return "neutro";
       return "negativo";
+    }
+
+    function formatDateUtc(iso) {
+      if (!iso) return "-";
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString("it-IT", { timeZone: "UTC" });
+      } catch (e) {
+        return iso;
+      }
     }
 
     async function loadData() {
       document.getElementById("info").textContent = "Caricamento...";
-      const tbody = document.querySelector("#tabella tbody");
-      tbody.innerHTML = "";
+      const tbodyMain = document.querySelector("#tabella-main tbody");
+      const tbodyHunter = document.querySelector("#tabella-hunter tbody");
+      tbodyMain.innerHTML = "";
+      tbodyHunter.innerHTML = "";
       document.getElementById("market").innerHTML = "";
 
       try {
         const res = await fetch(API_URL);
         const data = await res.json();
 
-        // Box stato mercato
+        const runTime = data.run_time_utc || null;
+        const runText = runTime ? formatDateUtc(runTime) : "-";
+        document.getElementById("last-run").textContent =
+          "Ultima analisi (UTC): " + runText;
+
         const market = data.market || {};
         const phase = market.phase || "N/D";
-        let htmlMarket = `<strong>Stato mercato:</strong> ${phase}`;
-        const det = market.details || {};
-        htmlMarket += "<ul>";
-        for (const k in det) {
-          const d = det[k];
-          htmlMarket += `<li>${k}: prezzo ${d.price}, 20d ${d.return_20d_pct}%, 60d ${d.return_60d_pct}%</li>`;
+        const details = market.details || {};
+        const highlights = market.highlights || [];
+
+        let htmlMarket = `<div class="market-title">Stato mercato: ${phase}</div>`;
+        htmlMarket += "<div style='font-size:12px;margin-top:4px;'>Indici chiave:</div><ul style='font-size:12px;margin-top:2px;'>";
+        for (const k in details) {
+          const d = details[k];
+          htmlMarket += `<li>${k}: prezzo ${d.price}, 20g ${d.return_20d_pct}%, 60g ${d.return_60d_pct}%</li>`;
         }
         htmlMarket += "</ul>";
+
+        if (highlights.length > 0) {
+          htmlMarket += "<div style='font-size:12px;margin-top:4px;'>Punti salienti (dati tecnici, non news reali):</div><ul class='highlights' style='font-size:12px;'>";
+          highlights.forEach(h => {
+            htmlMarket += `<li>${h}</li>`;
+          });
+          htmlMarket += "</ul>";
+        }
+
         document.getElementById("market").innerHTML = htmlMarket;
 
-        // Tabella titoli/ETF
         const results = data.assets || [];
-        document.getElementById("info").textContent =
+        const hunters = data.hunters || [];
+        document.getElementById("count-info").textContent =
           `Strumenti trovati: ${results.length}`;
 
+        if (results.length === 0) {
+          document.getElementById("info").textContent =
+            "Nessun titolo/ETF sopra la soglia di score.";
+          return;
+        }
+
+        document.getElementById("info").textContent = "";
+
+        // Tabella principale
         results.forEach((row, idx) => {
           const tr = document.createElement("tr");
           const cls = clsFromSignal(row.signal_label);
@@ -87,17 +249,45 @@
           tr.innerHTML = `
             <td>${idx + 1}</td>
             <td>${row.ticker}</td>
+            <td>${row.name || ""}</td>
             <td>${row.categoria}</td>
-            <td>${row.price.toFixed(3)}</td>
+            <td>${row.rating_1_5 ?? ""}</td>
             <td>${row.score.toFixed(3)}</td>
             <td>${row.signal_label}</td>
             <td>${row.trend_label}</td>
             <td>${row.momentum_label}</td>
+            <td>${row.price.toFixed(3)}</td>
+            <td>${row.entry_price.toFixed(3)}</td>
+            <td>${row.stop_loss.toFixed(3)}</td>
+            <td>${row.take_profit.toFixed(3)}</td>
+            <td>${row.volatility_20d_pct != null ? row.volatility_20d_pct.toFixed(3) : "-"}</td>
+            <td>${row.distance_1y_high_pct != null ? row.distance_1y_high_pct.toFixed(3) : "-"}</td>
+            <td>${row.hunter_score != null ? row.hunter_score.toFixed(3) : "-"}</td>
+            <td>${runText}</td>
+          `;
+          tbodyMain.appendChild(tr);
+        });
+
+        // Tabella Hunter
+        hunters.forEach((row, idx) => {
+          const tr = document.createElement("tr");
+          const cls = clsFromSignal(row.signal_label);
+          if (cls) tr.classList.add(cls);
+
+          tr.innerHTML = `
+            <td>${idx + 1}</td>
+            <td>${row.ticker}</td>
+            <td>${row.name || ""}</td>
+            <td>${row.categoria}</td>
+            <td>${row.hunter_score != null ? row.hunter_score.toFixed(3) : "-"}</td>
+            <td>${row.rating_1_5 ?? ""}</td>
+            <td>${row.score.toFixed(3)}</td>
+            <td>${row.price.toFixed(3)}</td>
             <td>${row.entry_price.toFixed(3)}</td>
             <td>${row.stop_loss.toFixed(3)}</td>
             <td>${row.take_profit.toFixed(3)}</td>
           `;
-          tbody.appendChild(tr);
+          tbodyHunter.appendChild(tr);
         });
       } catch (err) {
         console.error(err);
@@ -105,10 +295,9 @@
       }
     }
 
-    // carica all'apertura
+    // Carica una volta all'apertura, aggiornamenti solo quando premi il bottone
     loadData();
-    // aggiornamento automatico ogni 60 secondi
-    setInterval(loadData, 60000);
   </script>
 </body>
 </html>
+
