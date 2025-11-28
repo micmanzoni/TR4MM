@@ -85,6 +85,37 @@ def load_custom_tickers():
         pass
     return extra
 
+# ---------- helper per avere SEMPRE una Serie prezzo ----------
+
+def _extract_price_series(data: pd.DataFrame) -> pd.Series | None:
+    """
+    Da un DataFrame yfinance estrae una SINGOLA serie di prezzo.
+    Se trova 'Adj Close' o 'Close', usa quella.
+    Se la colonna è DataFrame (più colonne uguali), prende la prima.
+    """
+    if data is None or data.empty:
+        return None
+
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
+    base_col = None
+    if "Adj Close" in data.columns:
+        base_col = "Adj Close"
+    elif "Close" in data.columns:
+        base_col = "Close"
+    else:
+        return None
+
+    price = data[base_col]
+    if isinstance(price, pd.DataFrame):
+        # se per qualche motivo è un DataFrame (colonne duplicate),
+        # prendo la prima colonna
+        price = price.iloc[:, 0]
+
+    price = price.astype(float)
+    return price
+
 # ---------- Analisi indici ----------
 
 def _download_single(ticker, period="6mo", interval="1d", min_bars=60):
@@ -98,33 +129,25 @@ def _download_single(ticker, period="6mo", interval="1d", min_bars=60):
     if data is None or data.empty:
         return None
 
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
-
-    if "Adj Close" in data.columns:
-        price_col = "Adj Close"
-    elif "Close" in data.columns:
-        price_col = "Close"
-    else:
+    price = _extract_price_series(data)
+    if price is None or price.shape[0] < min_bars:
         return None
 
-    data[price_col] = data[price_col].astype(float)
-    if data.shape[0] < min_bars:
-        return None
+    df = pd.DataFrame(index=price.index)
+    df["Price"] = price
+    df["Return_20d"] = df["Price"].pct_change(20)
+    df["Return_60d"] = df["Price"].pct_change(60)
+    df["SMA_50"] = df["Price"].rolling(window=50).mean()
+    df["SMA_200"] = df["Price"].rolling(window=200).mean()
 
-    data["Return_20d"] = data[price_col].pct_change(20)
-    data["Return_60d"] = data[price_col].pct_change(60)
-    data["SMA_50"] = data[price_col].rolling(window=50).mean()
-    data["SMA_200"] = data[price_col].rolling(window=200).mean()
-
-    last_idx = data["Return_20d"].last_valid_index()
+    last_idx = df["Return_20d"].last_valid_index()
     if last_idx is None:
         return None
 
-    last = data.loc[last_idx]
+    last = df.loc[last_idx]
 
     return {
-        "price": float(last[price_col]),
+        "price": float(last["Price"]),
         "ret20": float(last["Return_20d"]),
         "ret60": float(last["Return_60d"]),
         "sma50": float(last["SMA_50"]) if not pd.isna(last["SMA_50"]) else None,
@@ -278,54 +301,47 @@ def scan_market(
         if data is None or data.empty:
             continue
 
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-
-        if "Adj Close" in data.columns:
-            price_col = "Adj Close"
-        elif "Close" in data.columns:
-            price_col = "Close"
-        else:
+        price = _extract_price_series(data)
+        if price is None or price.shape[0] < min_bars:
             continue
 
-        data[price_col] = data[price_col].astype(float)
-        if data.shape[0] < min_bars:
-            continue
-
-        data["Return_20d"] = data[price_col].pct_change(20)
-        data["Return_60d"] = data[price_col].pct_change(60)
-        data["SMA_20"] = data[price_col].rolling(window=20).mean()
-        data["Daily_ret"] = data[price_col].pct_change()
+        df = pd.DataFrame(index=price.index)
+        df["Price"] = price
+        df["Return_20d"] = df["Price"].pct_change(20)
+        df["Return_60d"] = df["Price"].pct_change(60)
+        df["SMA_20"] = df["Price"].rolling(window=20).mean()
+        df["Daily_ret"] = df["Price"].pct_change()
 
         if "Volume" in data.columns and not data["Volume"].isna().all():
-            data["Vol_20d_avg"] = data["Volume"].rolling(window=20).mean()
+            df["Volume"] = data["Volume"]
+            df["Vol_20d_avg"] = df["Volume"].rolling(window=20).mean()
         else:
-            data["Vol_20d_avg"] = np.nan
+            df["Volume"] = np.nan
+            df["Vol_20d_avg"] = np.nan
 
-        last_idx = data["Return_60d"].last_valid_index()
+        last_idx = df["Return_60d"].last_valid_index()
         if last_idx is None:
             continue
 
-        last = data.loc[last_idx]
+        last = df.loc[last_idx]
         if pd.isna(last["SMA_20"]) or last["SMA_20"] == 0:
             continue
 
-        price_now = float(last[price_col])
+        price_now = float(last["Price"])
         ret20 = float(last["Return_20d"])
         ret60 = float(last["Return_60d"])
         sma20 = float(last["SMA_20"])
         trend_vs_sma20 = price_now / sma20 - 1.0
 
         volume_ratio = 1.0
-        if "Volume" in data.columns and "Vol_20d_avg" in data.columns:
-            vol_20 = last.get("Vol_20d_avg", np.nan)
-            if not pd.isna(vol_20) and vol_20 != 0:
-                volume_ratio = float(last["Volume"] / vol_20)
+        vol_20 = last.get("Vol_20d_avg", np.nan)
+        if not pd.isna(vol_20) and vol_20 != 0:
+            volume_ratio = float(last["Volume"] / vol_20)
 
-        vol20 = data["Daily_ret"].rolling(20).std().iloc[-1]
+        vol20 = df["Daily_ret"].rolling(20).std().iloc[-1]
         vol20_pct = float(vol20 * np.sqrt(252) * 100) if not pd.isna(vol20) else None
 
-        high_1y = data[price_col].max()
+        high_1y = df["Price"].max()
         distance_1y_high_pct = float(price_now / high_1y * 100 - 100.0) if high_1y > 0 else None
 
         score = (
@@ -391,4 +407,3 @@ def scan_market(
         "assets": results,
         "hunters": top_hunters[:50]
     }
-
