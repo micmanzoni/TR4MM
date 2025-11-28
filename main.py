@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from strategy import scan_market, MIN_SCORE_DEFAULT
 
-app = FastAPI(title="Michiman Trading Scanner")
+import traceback
+import io
+
+app = FastAPI(title="Michiman Trading Scanner (DEBUG)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,9 +18,17 @@ app.add_middleware(
 @app.get("/scan")
 def scan(min_score: float = MIN_SCORE_DEFAULT):
     """
-    Calcola l'analisi al volo usando scan_market().
-    Nessun file results.json, niente dipendenze extra.
+    VERSIONE DEBUG:
+    prova a eseguire scan_market();
+    se qualcosa va storto, invece di 500 ritorna l'errore in chiaro.
     """
-    data = scan_market(min_score=min_score)
-    return data
-
+    try:
+        data = scan_market(min_score=min_score)
+        return data
+    except Exception as e:
+        buf = io.StringIO()
+        traceback.print_exc(file=buf)
+        return {
+            "error": str(e),
+            "traceback": buf.getvalue(),
+        }
