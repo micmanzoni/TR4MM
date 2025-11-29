@@ -25,6 +25,7 @@
     .logo-box img {
       height: 40px;
       width: auto;
+      border-radius: 8px;
     }
     h3 {
       margin: 0;
@@ -96,7 +97,8 @@
 <body>
   <div class="topbar">
     <div class="logo-box">
-      <img src="logo.png" alt="Michiman Hedge Fund Investment" />
+      <!-- QUI USIAMO michiman_logo.png -->
+      <img src="michiman_logo.png" alt="Michiman Hedge Fund Investment" />
       <div>
         <h3>MICHIMAN Trading Scanner</h3>
         <div style="font-size:11px;color:#9ca3af;">Hedge Fund Investment – Analisi tecnica automatizzata</div>
@@ -106,7 +108,7 @@
   </div>
 
   <div class="meta-bar">
-    <span id="last-run">Ultima analisi: -</span> |
+    <span id="last-run">Ultima analisi (UTC): -</span> |
     <span id="count-info"></span>
   </div>
 
@@ -168,7 +170,7 @@
 
   <script>
     // 👉 METTI QUI L'URL DEL TUO BACKEND (quello che funziona con /scan)
-    const API_URL = "https://tr4mm-2.onrender.com/scan?min_score=0.01";
+    const API_URL = "https://TUO-BACKEND.onrender.com/scan?min_score=0.01";
 
     function clsFromSignal(signal) {
       if (!signal) return "";
@@ -295,9 +297,8 @@
       }
     }
 
-    // Carica una volta all'apertura, aggiornamenti solo quando premi il bottone
+    // Carica una volta all'apertura, poi solo quando premi il bottone
     loadData();
   </script>
 </body>
 </html>
-
