@@ -66,14 +66,14 @@
     table {
       border-collapse: collapse;
       width: 100%;
-      font-size: 12px;
+      font-size: 11px;
       background: #020617;
       border-radius: 8px;
       overflow: hidden;
     }
     th, td {
       border: 1px solid #1e293b;
-      padding: 4px;
+      padding: 3px 4px;
       text-align: center;
       white-space: nowrap;
     }
@@ -91,6 +91,15 @@
       margin-bottom: 4px;
       font-size: 14px;
       font-weight: 600;
+    }
+    .spark {
+      width: 80px;
+      height: 20px;
+    }
+    a.chart-link {
+      text-decoration: none;
+      color: #93c5fd;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -120,10 +129,12 @@
       <thead>
         <tr>
           <th>#</th>
+          <th>Icona</th>
+          <th>Azione</th>
           <th>Ticker</th>
           <th>Nome</th>
           <th>Categoria</th>
-          <th>Consiglio (1–5)</th>
+          <th>Cons. (1–5)</th>
           <th>Score</th>
           <th>Segnale</th>
           <th>Trend</th>
@@ -135,7 +146,10 @@
           <th>Vol. 20g %</th>
           <th>Dist. max 1y %</th>
           <th>Dist. min 1y %</th>
+          <th>Potenziale tesoro (0–1)</th>
           <th>Hunter score</th>
+          <th>Trend 20g</th>
+          <th>Chart</th>
           <th>Analisi (UTC)</th>
         </tr>
       </thead>
@@ -152,16 +166,19 @@
       <thead>
         <tr>
           <th>#</th>
+          <th>Icona</th>
+          <th>Azione</th>
           <th>Ticker</th>
           <th>Nome</th>
           <th>Categoria</th>
           <th>Hunter score</th>
-          <th>Consiglio (1–5)</th>
+          <th>Cons. (1–5)</th>
           <th>Score</th>
           <th>Prezzo</th>
           <th>Entry</th>
           <th>SL</th>
           <th>TP</th>
+          <th>Chart</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -170,7 +187,7 @@
 
   <script>
     // 👉 METTI QUI L'URL DEL TUO BACKEND (quello che funziona con /scan)
-    const API_URL = "https://tr4mm-2.onrender.com/scan?min_score=0.01";
+    const API_URL = "https://TUO-BACKEND.onrender.com/scan?min_score=0.01";
 
     function clsFromSignal(signal) {
       if (!signal) return "";
@@ -187,6 +204,35 @@
       } catch (e) {
         return iso;
       }
+    }
+
+    function makeSparklineSVG(values) {
+      if (!values || !values.length) return "";
+      const width = 80;
+      const height = 20;
+      const n = values.length;
+      if (n === 1) {
+        const y = height - values[0] * height;
+        return `<svg class="spark" viewBox="0 0 ${width} ${height}">
+          <line x1="0" y1="${y}" x2="${width}" y2="${y}"
+                stroke="#60a5fa" stroke-width="1" fill="none" />
+        </svg>`;
+      }
+      const stepX = width / (n - 1);
+      let d = "";
+      for (let i = 0; i < n; i++) {
+        const x = i * stepX;
+        const v = values[i];
+        const y = height - v * height;
+        if (i === 0) {
+          d += `M ${x} ${y}`;
+        } else {
+          d += ` L ${x} ${y}`;
+        }
+      }
+      return `<svg class="spark" viewBox="0 0 ${width} ${height}">
+        <path d="${d}" stroke="#60a5fa" stroke-width="1" fill="none" />
+      </svg>`;
     }
 
     async function loadData() {
@@ -248,8 +294,13 @@
           const cls = clsFromSignal(row.signal_label);
           if (cls) tr.classList.add(cls);
 
+          const sparkSVG = makeSparklineSVG(row.sparkline || []);
+          const chartUrl = `https://finance.yahoo.com/quote/${row.ticker}`;
+
           tr.innerHTML = `
             <td>${idx + 1}</td>
+            <td>${row.action_icon || ""}</td>
+            <td>${row.action_text || ""}</td>
             <td>${row.ticker}</td>
             <td>${row.name || ""}</td>
             <td>${row.categoria}</td>
@@ -265,7 +316,10 @@
             <td>${row.volatility_20d_pct != null ? row.volatility_20d_pct.toFixed(3) : "-"}</td>
             <td>${row.distance_1y_high_pct != null ? row.distance_1y_high_pct.toFixed(3) : "-"}</td>
             <td>${row.distance_1y_low_pct != null ? row.distance_1y_low_pct.toFixed(3) : "-"}</td>
+            <td>${row.potenziale_tesoro != null ? row.potenziale_tesoro.toFixed(3) : "-"}</td>
             <td>${row.hunter_score != null ? row.hunter_score.toFixed(3) : "-"}</td>
+            <td>${sparkSVG}</td>
+            <td><a class="chart-link" href="${chartUrl}" target="_blank">📈</a></td>
             <td>${runText}</td>
           `;
           tbodyMain.appendChild(tr);
@@ -277,8 +331,12 @@
           const cls = clsFromSignal(row.signal_label);
           if (cls) tr.classList.add(cls);
 
+          const chartUrl = `https://finance.yahoo.com/quote/${row.ticker}`;
+
           tr.innerHTML = `
             <td>${idx + 1}</td>
+            <td>${row.action_icon || ""}</td>
+            <td>${row.action_text || ""}</td>
             <td>${row.ticker}</td>
             <td>${row.name || ""}</td>
             <td>${row.categoria}</td>
@@ -289,6 +347,7 @@
             <td>${row.entry_price.toFixed(3)}</td>
             <td>${row.stop_loss.toFixed(3)}</td>
             <td>${row.take_profit.toFixed(3)}</td>
+            <td><a class="chart-link" href="${chartUrl}" target="_blank">📈</a></td>
           `;
           tbodyHunter.appendChild(tr);
         });
