@@ -106,7 +106,7 @@ def get_readable_name(ticker: str) -> str:
 
     try:
         tkr = yf.Ticker(ticker)
-        info = tkr.info  # può essere un po' pesante, ma viene usato solo se serve
+        info = tkr.info
         name = info.get("shortName") or info.get("longName")
         if name:
             _NAME_CACHE[ticker] = name
@@ -120,7 +120,7 @@ def get_readable_name(ticker: str) -> str:
 
 # ---------- helper per avere SEMPRE una Serie prezzo ----------
 
-def _extract_price_series(data: pd.DataFrame) -> pd.Series | None:
+def _extract_price_series(data: pd.DataFrame):
     """
     Da un DataFrame yfinance estrae una SINGOLA serie di prezzo.
     Se trova 'Adj Close' o 'Close', usa quella.
@@ -311,6 +311,64 @@ def hunter_score_from_features(ret20, ret60, volume_ratio, distance_high_pct):
     )
 
 
+def action_from_indicators(score, rating, trend_label, momentum_label,
+                           distance_high_pct, distance_low_pct):
+    """
+    Ritorna (azione_testuale, icona) in base ai segnali tecnici.
+    Meccanico, SOLO didattico.
+    """
+    # default
+    action = "Attendi / nessun segnale chiaro"
+    icon = "⏸️"
+
+    # Idea short speculativa
+    if (score < 0 and
+        trend_label in ("Ribasso moderato", "Forte ribasso") and
+        momentum_label == "Momentum negativo" and
+        distance_low_pct is not None and distance_low_pct > 20):
+        return "Idea short speculativa (didattico)", "🔻"
+
+    # Evita
+    if rating <= 2 and momentum_label == "Momentum negativo":
+        return "Evita (setup debole)", "🚫"
+
+    # Compra setup long forte
+    if (rating >= 4 and
+        trend_label in ("Forte rialzo", "Rialzo moderato") and
+        momentum_label in ("Momentum molto forte", "Momentum positivo") and
+        distance_high_pct is not None and distance_high_pct >= -30):
+        return "Compra (setup long)", "🔼"
+
+    # Valuta long / watchlist
+    if (rating == 3 and
+        trend_label not in ("Forte ribasso", "Ribasso moderato") and
+        momentum_label in ("Momentum neutro", "Momentum positivo", "Momentum molto forte")):
+        return "Valuta long / watchlist", "👀"
+
+    return action, icon
+
+
+def value_opportunity_score(ret20, score, distance_low_pct):
+    """
+    Indice 0–1 di 'potenziale tesoro tecnico':
+    - vicino ai minimi 1 anno
+    - momentum che gira positivo
+    - score > 0
+    """
+    if distance_low_pct is None:
+        return 0.0
+    if distance_low_pct < 0 or distance_low_pct > 40:
+        return 0.0
+    if score <= 0 or ret20 < 0:
+        return 0.0
+    base = 1.0 - (distance_low_pct / 40.0)
+    if base < 0:
+        base = 0.0
+    if base > 1:
+        base = 1.0
+    return base
+
+
 # ---------- Scansione mercato ----------
 
 def scan_market(
@@ -411,7 +469,6 @@ def scan_market(
         mom_lbl = label_momentum(ret60_pct)
         signal_lbl = label_signal(score)
         rating = rating_from_score(score)
-
         hs = hunter_score_from_features(ret20, ret60, volume_ratio, distance_1y_high_pct)
 
         entry = price_now
@@ -419,6 +476,31 @@ def scan_market(
         tp = entry * (1.0 + TP_PCT)
 
         name = get_readable_name(ticker)
+
+        # azione/meccanica
+        action_text, action_icon = action_from_indicators(
+            score, rating, trend_lbl, mom_lbl,
+            distance_1y_high_pct, distance_1y_low_pct
+        )
+
+        # potenziale tesoro (0–1)
+        pot_tesoro = value_opportunity_score(ret20, score, distance_1y_low_pct)
+
+        # sparkline ultimi 20 giorni normalizzata 0–1
+        spark_len = min(20, df["Price"].shape[0])
+        spark_prices = df["Price"].tail(spark_len)
+        spark_vals = []
+        try:
+            p_min = float(spark_prices.min())
+            p_max = float(spark_prices.max())
+            if p_max == p_min:
+                spark_vals = [0.5] * spark_len
+            else:
+                for p in spark_prices:
+                    v = (p - p_min) / (p_max - p_min)
+                    spark_vals.append(round(float(v), 3))
+        except Exception:
+            spark_vals = []
 
         results.append({
             "ticker": ticker,
@@ -441,6 +523,10 @@ def scan_market(
             "entry_price": round(entry, 3),
             "stop_loss": round(sl, 3),
             "take_profit": round(tp, 3),
+            "action_text": action_text,
+            "action_icon": action_icon,
+            "potenziale_tesoro": round(pot_tesoro, 3),
+            "sparkline": spark_vals,
         })
 
     results = sorted(results, key=lambda x: x["score"], reverse=True)
