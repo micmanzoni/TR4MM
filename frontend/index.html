@@ -97,7 +97,6 @@
 <body>
   <div class="topbar">
     <div class="logo-box">
-      <!-- QUI USIAMO michiman_logo.png -->
       <img src="michiman_logo.png" alt="Michiman Hedge Fund Investment" />
       <div>
         <h3>MICHIMAN Trading Scanner</h3>
@@ -135,6 +134,7 @@
           <th>TP</th>
           <th>Vol. 20g %</th>
           <th>Dist. max 1y %</th>
+          <th>Dist. min 1y %</th>
           <th>Hunter score</th>
           <th>Analisi (UTC)</th>
         </tr>
@@ -264,6 +264,7 @@
             <td>${row.take_profit.toFixed(3)}</td>
             <td>${row.volatility_20d_pct != null ? row.volatility_20d_pct.toFixed(3) : "-"}</td>
             <td>${row.distance_1y_high_pct != null ? row.distance_1y_high_pct.toFixed(3) : "-"}</td>
+            <td>${row.distance_1y_low_pct != null ? row.distance_1y_low_pct.toFixed(3) : "-"}</td>
             <td>${row.hunter_score != null ? row.hunter_score.toFixed(3) : "-"}</td>
             <td>${runText}</td>
           `;
