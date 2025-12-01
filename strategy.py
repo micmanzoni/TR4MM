@@ -22,7 +22,7 @@ TICKERS_ETF = [
     "XLE", "XLF", "XLK", "XLV", "ARKK"
 ]
 
-# Nomi leggibili
+# Nomi leggibili "a mano"
 TICKER_NAME = {
     "^GSPC": "S&P 500",
     "^NDX": "Nasdaq 100",
@@ -60,6 +60,10 @@ TICKER_NAME = {
     "ARKK": "ARK Innovation ETF",
 }
 
+# cache per i nomi letti da Yahoo (vale solo durante una singola esecuzione)
+_NAME_CACHE: dict[str, str] = {}
+
+
 def build_universe():
     ticker_categoria = {}
     for t in TICKERS_INDICI:
@@ -71,6 +75,7 @@ def build_universe():
     for t in TICKERS_ETF:
         ticker_categoria[t] = "ETF"
     return ticker_categoria
+
 
 def load_custom_tickers():
     extra = {}
@@ -84,6 +89,34 @@ def load_custom_tickers():
     except FileNotFoundError:
         pass
     return extra
+
+
+def get_readable_name(ticker: str) -> str:
+    """
+    Restituisce un nome leggibile:
+    - prima prova il dizionario TICKER_NAME,
+    - poi, se non c'è, prova a chiedere a Yahoo (shortName / longName),
+    - se fallisce, ritorna il ticker.
+    """
+    if ticker in TICKER_NAME:
+        return TICKER_NAME[ticker]
+
+    if ticker in _NAME_CACHE:
+        return _NAME_CACHE[ticker]
+
+    try:
+        tkr = yf.Ticker(ticker)
+        info = tkr.info  # può essere un po' pesante, ma viene usato solo se serve
+        name = info.get("shortName") or info.get("longName")
+        if name:
+            _NAME_CACHE[ticker] = name
+            return name
+    except Exception:
+        pass
+
+    _NAME_CACHE[ticker] = ticker
+    return ticker
+
 
 # ---------- helper per avere SEMPRE una Serie prezzo ----------
 
@@ -109,12 +142,11 @@ def _extract_price_series(data: pd.DataFrame) -> pd.Series | None:
 
     price = data[base_col]
     if isinstance(price, pd.DataFrame):
-        # se per qualche motivo è un DataFrame (colonne duplicate),
-        # prendo la prima colonna
         price = price.iloc[:, 0]
 
     price = price.astype(float)
     return price
+
 
 # ---------- Analisi indici ----------
 
@@ -153,6 +185,7 @@ def _download_single(ticker, period="6mo", interval="1d", min_bars=60):
         "sma50": float(last["SMA_50"]) if not pd.isna(last["SMA_50"]) else None,
         "sma200": float(last["SMA_200"]) if not pd.isna(last["SMA_200"]) else None,
     }
+
 
 def analyze_market_regime():
     info = {}
@@ -210,6 +243,7 @@ def analyze_market_regime():
 
     return {"phase": phase, "details": details, "highlights": highlights}
 
+
 # ---------- Etichette & rating ----------
 
 def label_trend(trend_pct):
@@ -224,6 +258,7 @@ def label_trend(trend_pct):
     else:
         return "Forte ribasso"
 
+
 def label_momentum(ret60_pct):
     if ret60_pct > 20:
         return "Momentum molto forte"
@@ -233,6 +268,7 @@ def label_momentum(ret60_pct):
         return "Momentum neutro"
     else:
         return "Momentum negativo"
+
 
 def label_signal(score):
     if score > 0.5:
@@ -246,6 +282,7 @@ def label_signal(score):
     else:
         return "Negativo"
 
+
 def rating_from_score(score):
     if score > 0.6:
         return 5
@@ -257,6 +294,7 @@ def rating_from_score(score):
         return 2
     else:
         return 1
+
 
 def hunter_score_from_features(ret20, ret60, volume_ratio, distance_high_pct):
     m20 = max(ret20, 0.0)
@@ -271,6 +309,7 @@ def hunter_score_from_features(ret20, ret60, volume_ratio, distance_high_pct):
         0.1 * vol_boost +
         0.1 * space
     )
+
 
 # ---------- Scansione mercato ----------
 
@@ -333,17 +372,23 @@ def scan_market(
         sma20 = float(last["SMA_20"])
         trend_vs_sma20 = price_now / sma20 - 1.0
 
+        # volume ratio
         volume_ratio = 1.0
         vol_20 = last.get("Vol_20d_avg", np.nan)
         if not pd.isna(vol_20) and vol_20 != 0:
             volume_ratio = float(last["Volume"] / vol_20)
 
+        # volatilità annualizzata da 20g
         vol20 = df["Daily_ret"].rolling(20).std().iloc[-1]
         vol20_pct = float(vol20 * np.sqrt(252) * 100) if not pd.isna(vol20) else None
 
+        # distanza da max e min a 1 anno
         high_1y = df["Price"].max()
+        low_1y = df["Price"].min()
         distance_1y_high_pct = float(price_now / high_1y * 100 - 100.0) if high_1y > 0 else None
+        distance_1y_low_pct = float(price_now / low_1y * 100 - 100.0) if low_1y > 0 else None
 
+        # score
         score = (
             0.4 * ret60 +
             0.3 * ret20 +
@@ -366,13 +411,14 @@ def scan_market(
         mom_lbl = label_momentum(ret60_pct)
         signal_lbl = label_signal(score)
         rating = rating_from_score(score)
+
         hs = hunter_score_from_features(ret20, ret60, volume_ratio, distance_1y_high_pct)
 
         entry = price_now
         sl = entry * (1.0 - STOP_PCT)
         tp = entry * (1.0 + TP_PCT)
 
-        name = TICKER_NAME.get(ticker, ticker)
+        name = get_readable_name(ticker)
 
         results.append({
             "ticker": ticker,
@@ -390,6 +436,7 @@ def scan_market(
             "rating_1_5": rating,
             "volatility_20d_pct": round(vol20_pct, 3) if vol20_pct is not None else None,
             "distance_1y_high_pct": round(distance_1y_high_pct, 3) if distance_1y_high_pct is not None else None,
+            "distance_1y_low_pct": round(distance_1y_low_pct, 3) if distance_1y_low_pct is not None else None,
             "hunter_score": round(hs, 3),
             "entry_price": round(entry, 3),
             "stop_loss": round(sl, 3),
